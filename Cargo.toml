@@ -9,10 +9,13 @@ edition = "2021"
 aws-config = "0.3.0"
 aws-sdk-ecs = "0.3.0"
 color-eyre = "0.5"
+lazy_static = "1.4"
+prometheus = { version = "0.13", features = ["process"] }
 tokio = { version = "~1", features = ["macros", "parking_lot", "rt-multi-thread", "time"] }
 tracing = "0.1"
 tracing-futures = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "local-time", "parking_lot"] }
+warp = "0.3"
 
 [profile.release]
 lto = true
