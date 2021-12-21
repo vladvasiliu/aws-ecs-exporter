@@ -1,4 +1,3 @@
-use crate::aws::EcsClient;
 use crate::config::TlsConfig;
 use async_trait::async_trait;
 use color_eyre::Result;
@@ -26,10 +25,8 @@ impl Exporter {
     pub fn new(
         socket_address: impl Into<SocketAddr>,
         tls_config: Option<TlsConfig>,
-        scraper: EcsClient,
+        scraper: Arc<dyn Scraper>,
     ) -> Self {
-        let scraper = Arc::new(scraper);
-
         let exporter_opts = opts!(
             "http_requests",
             "Number of HTTP requests received by the exporter"
@@ -76,6 +73,7 @@ async fn scrape(
     scraper: Arc<dyn Scraper>,
     exporter_metrics_family: Arc<IntCounterVec>,
 ) -> std::result::Result<impl Reply, Infallible> {
+    // TODO: Move this to the scraper
     let status_opts = opts!(
         "aws_ecs_exporter_success",
         "Whether retrieval of ECS events from AWS API was successful"
