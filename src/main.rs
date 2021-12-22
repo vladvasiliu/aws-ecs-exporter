@@ -14,7 +14,8 @@ async fn main() -> Result<()> {
 
     let config = aws_config::load_from_env().await;
     let aws_client = aws_sdk_ecs::client::Client::new(&config);
-    let ecs_client = Arc::new(EcsClient::with_client(aws_client));
+    static CLUSTER_NAMES: &[&str] = &["Tools", "zorglub"];
+    let ecs_client = Arc::new(EcsClient::new(aws_client, CLUSTER_NAMES));
 
     let exporter = Exporter::new(([127, 0, 0, 1], 8080), None, ecs_client);
     exporter.work().await;

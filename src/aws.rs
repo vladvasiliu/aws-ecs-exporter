@@ -13,14 +13,18 @@ pub struct ClusterInfo {
 
 pub struct EcsClient {
     client: aws_sdk_ecs::Client,
+    cluster_names: &'static [&'static str],
 }
 
 impl EcsClient {
-    pub fn with_client(client: aws_sdk_ecs::Client) -> Self {
-        Self { client }
+    pub fn new(client: aws_sdk_ecs::Client, cluster_names: &'static [&'static str]) -> Self {
+        Self {
+            client,
+            cluster_names,
+        }
     }
 
-    pub async fn get_cluster_details(&self, cluster: &str) -> Result<ClusterInfo> {
+    async fn get_cluster_details(&self, cluster: &str) -> Result<ClusterInfo> {
         let svc_list = self.get_service_names(cluster).await?;
         let services = self
             .get_services_details(cluster, svc_list.iter().map(String::as_ref).collect())
@@ -153,23 +157,36 @@ fn log_failures(failures: Option<Vec<Failure>>) {
 impl Scraper for EcsClient {
     async fn scrape(&self) -> Result<Registry> {
         let registry = Registry::new();
+        let scrape_metric = IntGaugeVec::new(
+            opts!(
+                "aws_ecs_cluster_scrape_success",
+                "Whether the scrape for a particular cluster and resource kind was successful"
+            ),
+            &["cluster_name", "scraped_resource"],
+        )
+        .expect("Failed to generate aws_ecs_cluster_scrape_success metric");
+        registry
+            .register(Box::new(scrape_metric))
+            .expect("Failed to register aws_ecs_cluster_scrape_success metric");
 
-        let response = self.get_cluster_details("Tools").await;
+        for cluster_name in self.cluster_names {
+            let response = self.get_cluster_details(cluster_name).await;
 
-        response.map(|cluster_info| {
-            for mf in get_service_metrics(&cluster_info.services, "Tools") {
-                registry
-                    .register(Box::new(mf))
-                    .expect("Failed to register services metrics");
-            }
+            if let Ok(cluster_info) = response {
+                for mf in get_service_metrics(&cluster_info.services, cluster_name) {
+                    registry
+                        .register(Box::new(mf))
+                        .expect("Failed to register services metrics");
+                }
 
-            for mf in get_instance_metrics(&cluster_info.instances, "Tools") {
-                registry
-                    .register(Box::new(mf))
-                    .expect("Failed to register instances metrics");
-            }
-            registry
-        })
+                for mf in get_instance_metrics(&cluster_info.instances, cluster_name) {
+                    registry
+                        .register(Box::new(mf))
+                        .expect("Failed to register instances metrics");
+                }
+            };
+        }
+        Ok(registry)
     }
 }
 
