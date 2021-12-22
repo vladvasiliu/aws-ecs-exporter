@@ -1,6 +1,6 @@
 use crate::exporter::Scraper;
 use async_trait::async_trait;
-use aws_sdk_ecs::model::{ContainerInstance, Failure, Resource, Service};
+use aws_sdk_ecs::model::{Failure, Resource};
 use color_eyre::Result;
 use prometheus::{opts, IntGaugeVec, Registry};
 use tracing::warn;
