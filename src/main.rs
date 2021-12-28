@@ -12,12 +12,13 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
     color_eyre::install()?;
 
-    let config = aws_config::load_from_env().await;
-    let aws_client = aws_sdk_ecs::client::Client::new(&config);
-    static CLUSTER_NAMES: &[&str] = &["Tools", "zorglub"];
-    let ecs_client = Arc::new(EcsClient::new(aws_client, CLUSTER_NAMES));
+    let config = config::Config::from_args();
 
-    let exporter = Exporter::new(([127, 0, 0, 1], 8080), None, ecs_client);
+    let aws_config = aws_config::load_from_env().await;
+    let aws_client = aws_sdk_ecs::client::Client::new(&aws_config);
+    let ecs_client = Arc::new(EcsClient::new(aws_client, &config.cluster_names));
+
+    let exporter = Exporter::new(config.listen_address, None, ecs_client);
     exporter.work().await;
 
     Ok(())

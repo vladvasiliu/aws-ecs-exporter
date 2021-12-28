@@ -7,14 +7,17 @@ use tracing::warn;
 
 pub struct EcsClient {
     client: aws_sdk_ecs::Client,
-    cluster_names: &'static [&'static str],
+    cluster_names: Vec<String>,
 }
 
 impl EcsClient {
-    pub fn new(client: aws_sdk_ecs::Client, cluster_names: &'static [&'static str]) -> Self {
+    pub fn new<C: AsRef<str>>(client: aws_sdk_ecs::Client, cluster_names: &[C]) -> Self {
         Self {
             client,
-            cluster_names,
+            cluster_names: cluster_names
+                .iter()
+                .map(|x| x.as_ref().to_owned())
+                .collect(),
         }
     }
 
@@ -259,10 +262,10 @@ impl Scraper for EcsClient {
         )
         .expect("Failed to generate aws_ecs_cluster_scrape_success metric");
 
-        for cluster_name in self.cluster_names {
+        for cluster_name in &self.cluster_names {
             let instance_scrape_metric =
-                scrape_metric.with_label_values(&[cluster_name, "cluster_instances"]);
-            match self.get_container_instance_metrics(cluster_name).await {
+                scrape_metric.with_label_values(&[&cluster_name, "cluster_instances"]);
+            match self.get_container_instance_metrics(&cluster_name).await {
                 Ok(instance_metrics) => {
                     for mf in instance_metrics {
                         registry
@@ -280,8 +283,8 @@ impl Scraper for EcsClient {
             }
 
             let service_scrape_metric =
-                scrape_metric.with_label_values(&[cluster_name, "services"]);
-            match self.get_service_metrics(cluster_name).await {
+                scrape_metric.with_label_values(&[&cluster_name, "services"]);
+            match self.get_service_metrics(&cluster_name).await {
                 Ok(service_metrics) => {
                     for mf in service_metrics {
                         registry
