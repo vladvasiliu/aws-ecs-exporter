@@ -1,3 +1,4 @@
+use aws_types::region::Region;
 use clap::{app_from_crate, AppSettings, Arg};
 use regex::Regex;
 use std::net::SocketAddr;
@@ -13,6 +14,7 @@ pub struct Config {
     pub cluster_names: Vec<String>,
     pub aws_role: Option<String>,
     pub listen_address: SocketAddr,
+    pub region: Option<Region>,
 }
 
 impl Config {
@@ -23,7 +25,6 @@ impl Config {
             .term_width(120)
             .args(&[
                 Arg::new("clusters")
-                    .short('c')
                     .long("cluster")
                     .takes_value(true)
                     .value_name("CLUSTER")
@@ -33,8 +34,17 @@ impl Config {
                     .forbid_empty_values(true)
                     .env("ECS_EXPORTER_CLUSTERS")
                     .help("Cluster name (one or more)"),
+                Arg::new("region")
+                    .long("region")
+                    .takes_value(true)
+                    .value_name("AWS_REGION")
+                    .required(false)
+                    .multiple_occurrences(false)
+                    .multiple_values(false)
+                    .forbid_empty_values(true)
+                    .env("AWS_REGION")
+                    .help("AWS Region to use, if any"),
                 Arg::new("role")
-                    .short('r')
                     .long("role")
                     .takes_value(true)
                     .value_name("AWS_ROLE")
@@ -68,6 +78,10 @@ impl Config {
             cluster_names: matches.values_of_t_or_exit("clusters"),
             aws_role: matches.value_of("role").map(String::from),
             listen_address: matches.value_of_t_or_exit("listen"),
+            region: matches
+                .value_of("region")
+                .map(String::from)
+                .map(Region::new),
         }
     }
 }

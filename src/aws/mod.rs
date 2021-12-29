@@ -1,9 +1,13 @@
+mod auth;
+
 use crate::exporter::Scraper;
 use async_trait::async_trait;
 use aws_sdk_ecs::model::{Failure, Resource};
 use color_eyre::Result;
 use prometheus::{opts, IntGaugeVec, Registry};
 use tracing::warn;
+
+pub use auth::get_credentials_provider;
 
 pub struct EcsClient {
     client: aws_sdk_ecs::Client,
@@ -264,8 +268,8 @@ impl Scraper for EcsClient {
 
         for cluster_name in &self.cluster_names {
             let instance_scrape_metric =
-                scrape_metric.with_label_values(&[&cluster_name, "cluster_instances"]);
-            match self.get_container_instance_metrics(&cluster_name).await {
+                scrape_metric.with_label_values(&[cluster_name, "cluster_instances"]);
+            match self.get_container_instance_metrics(cluster_name).await {
                 Ok(instance_metrics) => {
                     for mf in instance_metrics {
                         registry
@@ -283,8 +287,8 @@ impl Scraper for EcsClient {
             }
 
             let service_scrape_metric =
-                scrape_metric.with_label_values(&[&cluster_name, "services"]);
-            match self.get_service_metrics(&cluster_name).await {
+                scrape_metric.with_label_values(&[cluster_name, "services"]);
+            match self.get_service_metrics(cluster_name).await {
                 Ok(service_metrics) => {
                     for mf in service_metrics {
                         registry

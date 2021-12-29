@@ -92,6 +92,7 @@ dependencies = [
  "async-trait",
  "aws-config",
  "aws-sdk-ecs",
+ "aws-types",
  "clap",
  "color-eyre",
  "lazy_static",
