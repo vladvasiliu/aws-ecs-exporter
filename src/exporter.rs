@@ -2,7 +2,10 @@ use crate::config::TlsConfig;
 use async_trait::async_trait;
 use color_eyre::Result;
 use lazy_static::lazy_static;
-use prometheus::{gather, opts, register, Encoder, IntCounterVec, IntGauge, Registry, TextEncoder};
+use prometheus::{
+    gather, opts, register, register_int_gauge_vec, Encoder, IntCounterVec, IntGauge, Registry,
+    TextEncoder,
+};
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -26,6 +29,8 @@ impl Exporter {
         socket_address: impl Into<SocketAddr>,
         tls_config: Option<TlsConfig>,
         scraper: Arc<dyn Scraper>,
+        exporter_name: &str,
+        exporter_version: &str,
     ) -> Self {
         let exporter_opts = opts!(
             "http_requests",
@@ -35,6 +40,16 @@ impl Exporter {
             .expect("Failed to create exporter metrics");
         register(Box::new(exporter_metrics.clone()))
             .expect("Failed to register exporter metrics family");
+
+        let exporter_info = register_int_gauge_vec!(
+            opts!(format!("{}_info", exporter_name), "Exporter version"),
+            &["version"]
+        )
+        .expect("Failed to register exporter info");
+        exporter_info
+            .get_metric_with_label_values(&[exporter_version])
+            .expect("Failed to retrieve info metric")
+            .set(1);
 
         Self {
             socket_address: socket_address.into(),

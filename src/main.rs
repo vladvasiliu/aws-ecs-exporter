@@ -8,7 +8,6 @@ use aws_config::meta::region::RegionProviderChain;
 use aws_types::credentials::SharedCredentialsProvider;
 use color_eyre::Result;
 use std::sync::Arc;
-use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -40,7 +39,13 @@ async fn main() -> Result<()> {
     let aws_client = aws_sdk_ecs::client::Client::new(&aws_config);
     let ecs_client = Arc::new(EcsClient::new(aws_client, &config.cluster_names));
 
-    let exporter = Exporter::new(config.listen_address, None, ecs_client);
+    let exporter = Exporter::new(
+        config.listen_address,
+        None,
+        ecs_client,
+        "aws_ecs_exporter",
+        &config.app_version,
+    );
     exporter.work().await;
 
     Ok(())

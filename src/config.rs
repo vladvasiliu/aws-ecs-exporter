@@ -1,5 +1,5 @@
 use aws_types::region::Region;
-use clap::{app_from_crate, AppSettings, Arg};
+use clap::{app_from_crate, crate_version, AppSettings, Arg};
 use regex::Regex;
 use std::net::SocketAddr;
 
@@ -15,6 +15,7 @@ pub struct Config {
     pub aws_role: Option<String>,
     pub listen_address: SocketAddr,
     pub region: Option<Region>,
+    pub app_version: String,
 }
 
 impl Config {
@@ -82,6 +83,7 @@ impl Config {
                 .value_of("region")
                 .map(String::from)
                 .map(Region::new),
+            app_version: crate_version!().to_string(),
         }
     }
 }
