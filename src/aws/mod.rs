@@ -4,7 +4,7 @@ use crate::exporter::Scraper;
 use async_trait::async_trait;
 use aws_sdk_ecs::model::{Failure, Resource};
 use color_eyre::Result;
-use prometheus::{opts, IntGaugeVec, Registry};
+use prometheus::{opts, register_int_gauge_vec_with_registry, IntGaugeVec, Registry};
 use tracing::warn;
 
 pub use auth::get_credentials_provider;
@@ -75,26 +75,16 @@ impl EcsClient {
         Ok(result)
     }
 
-    async fn get_service_metrics(&self, cluster: &str) -> Result<Vec<IntGaugeVec>> {
+    async fn get_service_metrics(
+        &self,
+        cluster: &str,
+        service_metric_family_desired: &IntGaugeVec,
+        service_metric_family_current: &IntGaugeVec,
+    ) -> Result<()> {
         let svc_list = self.get_service_names(cluster).await?;
         let services = self
             .get_services_details(cluster, svc_list.iter().map(String::as_ref).collect())
             .await?;
-
-        let service_metric_family_current = IntGaugeVec::new(
-            opts!(
-                "aws_ecs_service_current_total",
-                "Current Number of ECS Services"
-            ),
-            &["cluster_name", "service_name", "state"],
-        )
-        .expect("Failed to generate aws_ecs_service metric family");
-
-        let service_metric_family_desired = IntGaugeVec::new(
-            opts!("aws_ecs_service_desired", "Desired Number of ECS Services"),
-            &["cluster_name", "service_name"],
-        )
-        .expect("Failed to generate aws_ecs_service metric family");
 
         for service in services {
             service_metric_family_desired
@@ -108,10 +98,7 @@ impl EcsClient {
                 .set(service.pending_count as i64);
         }
 
-        Ok(vec![
-            service_metric_family_desired,
-            service_metric_family_current,
-        ])
+        Ok(())
     }
 
     async fn get_container_instance_names(&self, cluster_name: &str) -> Result<Vec<String>> {
@@ -159,7 +146,13 @@ impl EcsClient {
         Ok(result)
     }
 
-    async fn get_container_instance_metrics(&self, cluster: &str) -> Result<Vec<IntGaugeVec>> {
+    async fn get_container_instance_metrics(
+        &self,
+        cluster: &str,
+        task_metric_family: &IntGaugeVec,
+        resource_metric_family_registered: &IntGaugeVec,
+        resource_metric_family_remaining: &IntGaugeVec,
+    ) -> Result<()> {
         let instance_name_list = self.get_container_instance_names(cluster).await?;
         let instances = self
             .get_container_instance_details(
@@ -167,33 +160,6 @@ impl EcsClient {
                 instance_name_list.iter().map(String::as_ref).collect(),
             )
             .await?;
-
-        let task_metric_family = IntGaugeVec::new(
-            opts!(
-                "aws_ecs_instance_tasks_total",
-                "Tasks running on the Container Instances (ec2)"
-            ),
-            &["cluster_name", "ec2_instance_id", "state"],
-        )
-        .expect("Failed to generate aws_ecs_instance_tasks metric family");
-
-        let resource_metric_family_registered = IntGaugeVec::new(
-            opts!(
-                "aws_ecs_instance_resources_registered",
-                "Initial resources available on ECS Container Instance"
-            ),
-            &["cluster_name", "ec2_instance_id", "resource"],
-        )
-        .expect("Failed to generate aws_ecs_instance_resources_registered metric family");
-
-        let resource_metric_family_remaining = IntGaugeVec::new(
-            opts!(
-                "aws_ecs_instance_resources_remaining",
-                "Initial resources available on ECS Container Instance"
-            ),
-            &["cluster_name", "ec2_instance_id", "resource"],
-        )
-        .expect("Failed to generate aws_ecs_instance_resources_remaining metric family");
 
         for instance in instances {
             task_metric_family
@@ -245,11 +211,7 @@ impl EcsClient {
             }
         }
 
-        Ok(vec![
-            task_metric_family,
-            resource_metric_family_registered,
-            resource_metric_family_remaining,
-        ])
+        Ok(())
     }
 }
 
@@ -257,25 +219,76 @@ impl EcsClient {
 impl Scraper for EcsClient {
     async fn scrape(&self) -> Result<Registry> {
         let registry = Registry::new();
-        let scrape_metric = IntGaugeVec::new(
+        let scrape_metric = register_int_gauge_vec_with_registry!(
             opts!(
                 "aws_ecs_cluster_scrape_success",
                 "Whether the scrape for a particular cluster and resource kind was successful"
             ),
             &["cluster_name", "scraped_resource"],
+            registry
         )
         .expect("Failed to generate aws_ecs_cluster_scrape_success metric");
+
+        let task_metric_family = register_int_gauge_vec_with_registry!(
+            opts!(
+                "aws_ecs_instance_tasks_total",
+                "Tasks running on the Container Instances (ec2)"
+            ),
+            &["cluster_name", "ec2_instance_id", "state"],
+            registry
+        )
+        .expect("Failed to register aws_ecs_instance_tasks metric family");
+
+        let resource_metric_family_registered = register_int_gauge_vec_with_registry!(
+            opts!(
+                "aws_ecs_instance_resources_registered",
+                "Initial resources available on ECS Container Instance"
+            ),
+            &["cluster_name", "ec2_instance_id", "resource"],
+            registry
+        )
+        .expect("Failed to register aws_ecs_instance_resources_registered metric family");
+
+        let resource_metric_family_remaining = register_int_gauge_vec_with_registry!(
+            opts!(
+                "aws_ecs_instance_resources_remaining",
+                "Initial resources available on ECS Container Instance"
+            ),
+            &["cluster_name", "ec2_instance_id", "resource"],
+            registry
+        )
+        .expect("Failed to register aws_ecs_instance_resources_remaining metric family");
+
+        let service_metric_family_current = register_int_gauge_vec_with_registry!(
+            opts!(
+                "aws_ecs_service_current_total",
+                "Current Number of ECS Services"
+            ),
+            &["cluster_name", "service_name", "state"],
+            registry
+        )
+        .expect("Failed to generate aws_ecs_service metric family");
+
+        let service_metric_family_desired = register_int_gauge_vec_with_registry!(
+            opts!("aws_ecs_service_desired", "Desired Number of ECS Services"),
+            &["cluster_name", "service_name"],
+            registry
+        )
+        .expect("Failed to generate aws_ecs_service metric family");
 
         for cluster_name in &self.cluster_names {
             let instance_scrape_metric =
                 scrape_metric.with_label_values(&[cluster_name, "cluster_instances"]);
-            match self.get_container_instance_metrics(cluster_name).await {
-                Ok(instance_metrics) => {
-                    for mf in instance_metrics {
-                        registry
-                            .register(Box::new(mf))
-                            .expect("Failed to register instances metrics");
-                    }
+            match self
+                .get_container_instance_metrics(
+                    cluster_name,
+                    &task_metric_family,
+                    &resource_metric_family_registered,
+                    &resource_metric_family_remaining,
+                )
+                .await
+            {
+                Ok(()) => {
                     instance_scrape_metric.set(1);
                 }
                 Err(err) => {
@@ -288,13 +301,15 @@ impl Scraper for EcsClient {
 
             let service_scrape_metric =
                 scrape_metric.with_label_values(&[cluster_name, "services"]);
-            match self.get_service_metrics(cluster_name).await {
-                Ok(service_metrics) => {
-                    for mf in service_metrics {
-                        registry
-                            .register(Box::new(mf))
-                            .expect("Failed to register services metrics");
-                    }
+            match self
+                .get_service_metrics(
+                    cluster_name,
+                    &service_metric_family_desired,
+                    &service_metric_family_current,
+                )
+                .await
+            {
+                Ok(()) => {
                     service_scrape_metric.set(1);
                 }
                 Err(err) => warn!(
@@ -303,10 +318,6 @@ impl Scraper for EcsClient {
                 ),
             }
         }
-
-        registry
-            .register(Box::new(scrape_metric))
-            .expect("Failed to register aws_ecs_cluster_scrape_success metric");
         Ok(registry)
     }
 }
