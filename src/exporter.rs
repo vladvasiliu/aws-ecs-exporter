@@ -1,10 +1,8 @@
 use crate::config::TlsConfig;
 use async_trait::async_trait;
 use color_eyre::Result;
-use lazy_static::lazy_static;
 use prometheus::{
-    gather, opts, register, register_int_gauge_vec, Encoder, IntCounterVec, IntGauge, Registry,
-    TextEncoder,
+    gather, opts, register, register_int_gauge_vec, Encoder, IntCounterVec, Registry, TextEncoder,
 };
 use std::convert::Infallible;
 use std::net::SocketAddr;
@@ -20,8 +18,8 @@ pub trait Scraper: Send + Sync {
 pub struct Exporter {
     socket_address: SocketAddr,
     tls_config: Option<TlsConfig>,
-    scraper: Arc<dyn Scraper>, // A wrapper around an aws-sdk-ecs client
-    exporter_metrics: Arc<IntCounterVec>, // Metrics that concern the exporter itself
+    scraper: Arc<dyn Scraper>, // This does the actual metric collection
+    exporter_metrics: Arc<IntCounterVec>, // Metrics about the exporter itself
 }
 
 impl Exporter {
@@ -65,9 +63,8 @@ impl Exporter {
         let metrics = warp::path("metrics")
             .and_then(move || scrape(scraper.clone(), exporter_metrics.clone()));
 
-        let home = warp::path::end().map(|| warp::reply::html(HOME_PAGE.as_str()));
-        let status = warp::path("status").map(|| warp::reply::html(STATUS_PAGE));
-        let route = home.or(status).or(metrics);
+        let status = warp::path("status").map(warp::reply::reply);
+        let route = status.or(metrics);
 
         let server = warp::serve(route);
         match &self.tls_config {
@@ -88,14 +85,6 @@ async fn scrape(
     scraper: Arc<dyn Scraper>,
     exporter_metrics_family: Arc<IntCounterVec>,
 ) -> std::result::Result<impl Reply, Infallible> {
-    // TODO: Move this to the scraper
-    let status_opts = opts!(
-        "aws_ecs_exporter_success",
-        "Whether retrieval of ECS events from AWS API was successful"
-    );
-    // holds the status of this particular scrape
-    let status_gauge = IntGauge::with_opts(status_opts).expect("Failed to generate status gauge");
-
     // The match sets the label to increment for the http metric, either success or error
     // Status gauge represents the status of only this particular scrape
     let labels: &[&str];
@@ -103,7 +92,6 @@ async fn scrape(
     // This registry contains the metrics for this particular scrape
     let registry = match scraper.scrape().await {
         Ok(registry) => {
-            status_gauge.set(1);
             labels = &["success"];
             registry
         }
@@ -114,7 +102,6 @@ async fn scrape(
         }
     };
 
-    registry.register(Box::new(status_gauge)).unwrap();
     exporter_metrics_family
         .get_metric_with_label_values(labels)
         .unwrap()
@@ -128,25 +115,3 @@ async fn scrape(
     encoder.encode(&metric_families, &mut buffer).unwrap();
     Ok(String::from_utf8(buffer).unwrap())
 }
-
-lazy_static! {
-    static ref HOME_PAGE: String = format!(
-        "
-        <html>
-        <head><title>AWS ECS Exporter</title></head>
-        <body>
-            AWS ECS Exporter v{}
-            <ul>
-                <li><a href=\"/status\">Exporter status</a></li>
-                <li><a href=\"/metrics\">Metrics</a></li>
-            </ul>
-        </body>
-    </html>
-    ",
-        // crate_version!()
-        1.1
-    );
-}
-
-static STATUS_PAGE: &str =
-    "<html><head><title>AWS ECS Exporter</title></head><body>Ok</body></html>";
