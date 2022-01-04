@@ -10,7 +10,7 @@ async-trait = "0.1"
 aws-config = "0.3.0"
 aws-sdk-ecs = "0.3.0"
 aws-types = "0.3.0"
-clap = { version = "3.0.0", features = ["cargo", "env", "regex"] }
+clap = { version = "3.0.1", features = ["cargo", "env", "regex"] }
 color-eyre = "0.5"
 prometheus = { version = "0.13", features = ["process"] }
 regex = { version = "1", features = ["perf-dfa"] }
