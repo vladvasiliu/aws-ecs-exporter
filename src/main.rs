@@ -13,6 +13,7 @@ use std::sync::Arc;
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
+        .json()
         .init();
     color_eyre::install()?;
 
